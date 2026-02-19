@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lotre Online - Avatar Lotere</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    
+    <style>
+        :root { --primary: #0984e3; --admin: #d63031; --bg: #f1f2f6; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .display-area { background: #2d3436; color: #fff; font-size: 5rem; font-weight: bold; padding: 30px; border-radius: 15px; margin: 20px 0; border: 5px solid #636e72; }
+        input { padding: 12px; border: 2px solid #b2bec3; border-radius: 8px; width: 85%; margin-bottom: 15px; font-size: 1.1rem; text-align: center; }
+        .btn { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px; }
+        .btn:disabled { background: #b2bec3; }
+        
+        /* Panel Admin & Riwayat */
+        .admin-box { margin-top: 20px; padding: 15px; border: 2px dashed var(--admin); border-radius: 10px; display: none; background: #fff5f5; text-align: left; }
+        .status-tag { font-size: 1rem; padding: 10px; border-radius: 10px; background: #eee; font-weight: bold; margin-bottom: 10px; }
+        
+        .history-list { margin-top: 15px; background: white; border-radius: 8px; padding: 10px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; }
+        .history-item { font-size: 0.9rem; padding: 5px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="userStatus" class="status-tag">Menunggu Admin...</div>
+    <div class="display-area" id="mainNumber">--</div>
+
+    <div id="playerUI">
+        <input type="text" id="playerName" placeholder="Nama Anda" style="margin-bottom: 5px;">
+        <input type="number" id="userGuess" placeholder="Tebak 1-100" min="1" max="100">
+        <button class="btn" id="btnLock" onclick="lockAnswer()">KUNCI JAWABAN</button>
+    </div>
+
+    <div style="margin-top: 40px; color: #eee; cursor: pointer;" onclick="openAdmin()">⚙️</div>
+    
+    <div id="adminSection" class="admin-box">
+        <h3 style="color: var(--admin); text-align: center;">PANEL ADMIN</h3>
+        
+        <p><b>1. Daftar Tebakan Player:</b></p>
+        <div class="history-list" id="playerGuesses">Belum ada tebakan...</div>
+
+        <hr>
+        <p><b>2. Putar Lotre:</b></p>
+        <input type="number" id="targetNumber" placeholder="Angka Pemenang">
+        <button class="btn" style="background: var(--admin)" onclick="triggerSpin()">PUTAR DI SEMUA HP</button>
+        <button class="btn" style="background: #2d3436; font-size: 0.8rem;" onclick="resetGame()">RESET SEMUA</button>
+    </div>
+</div>
+
+<script>
+    // Konfigurasi Firebase Anda
+    const firebaseConfig = {
+        apiKey: "AIzaSyAkeywT1lnLHPLJUnfWGNtsSqiePttpzPo",
+        authDomain: "avatar-lotere.firebaseapp.com",
+        projectId: "avatar-lotere",
+        storageBucket: "avatar-lotere.firebasestorage.app",
+        messagingSenderId: "650747269084",
+        appId: "1:650747269084:web:66ac50e91394fabc694919",
+        measurementId: "G-P619V6M7Z7",
+        databaseURL: "https://avatar-lotere-default-rtdb.firebaseio.com" 
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const PIN_ADMIN = "123456";
+    let myGuess = null;
+
+    // Listen Perintah Admin & Riwayat Tebakan
+    db.ref('roomControl').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            if (data.action === 'SPIN') startGlobalSpin(data.result);
+            if (data.action === 'RESET') location.reload();
+        }
+    });
+
+    // Admin Memantau Tebakan Player secara Real-time
+    db.ref('guesses').on('value', (snapshot) => {
+        const guesses = snapshot.val();
+        const container = document.getElementById('playerGuesses');
+        if (!guesses) {
+            container.innerHTML = "Menunggu tebakan...";
+            return;
+        }
+        let html = "";
+        Object.values(guesses).forEach(item => {
+            html += `<div class="history-item"><span>${item.name}</span> <b>${item.guess}</b></div>`;
+        });
+        container.innerHTML = html;
+    });
+
+    function openAdmin() {
+        if (prompt("Masukkan PIN Admin:") === PIN_ADMIN) {
+            document.getElementById('adminSection').style.display = 'block';
+        }
+    }
+
+    function lockAnswer() {
+        const name = document.getElementById('playerName').value;
+        const guess = document.getElementById('userGuess').value;
+        
+        if (!name || !guess) return alert("Isi Nama dan Angka!");
+        
+        myGuess = guess;
+        
+        // Simpan tebakan ke Firebase agar Admin bisa lihat
+        db.ref('guesses').push({
+            name: name,
+            guess: guess
+        });
+
+        document.getElementById('playerName').disabled = true;
+        document.getElementById('userGuess').disabled = true;
+        document.getElementById('btnLock').disabled = true;
+        document.getElementById('userStatus').textContent = "Terkunci: " + myGuess;
+        document.getElementById('userStatus').style.background = "#ffeaa7";
+    }
+
+    function triggerSpin() {
+        const target = document.getElementById('targetNumber').value;
+        if (!target) return alert("Set angka target!");
+        db.ref('roomControl').set({ action: 'SPIN', result: parseInt(target), time: Date.now() });
+    }
+
+    function startGlobalSpin(finalResult) {
+        const display = document.getElementById('mainNumber');
+        const status = document.getElementById('userStatus');
+        let counter = 0;
+        const interval = setInterval(() => {
+            display.textContent = Math.floor(Math.random() * 100) + 1;
+            counter++;
+            if (counter > 40) {
+                clearInterval(interval);
+                display.textContent = finalResult;
+                if (myGuess) {
+                    const win = parseInt(myGuess) === finalResult;
+                    status.textContent = win ? "MENANG! 🎉" : "KALAH! ❌";
+                    status.style.background = win ? "#00b894" : "#d63031";
+                    status.style.color = "white";
+                }
+            }
+        }, 50);
+    }
+
+    function resetGame() {
+        if(confirm("Reset semua data permainan?")) {
+            db.ref('guesses').remove(); // Hapus riwayat tebakan
+            db.ref('roomControl').set({ action: 'RESET' });
+        }
+    }
+</script>
+</body>
+</html>
